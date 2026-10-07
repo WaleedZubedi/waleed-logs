@@ -211,8 +211,8 @@ select{font:inherit;color:inherit;width:100%;background:var(--surface);border:1p
     <div class="card-body">
       <p class="status" style="margin:0">Sign in with the same email on your phone and computer and your logs stay in sync.</p>
       <form id="authForm" autocomplete="on">
-        <div class="field"><label for="authEmail">Email</label><input id="authEmail" type="email" autocomplete="email" required></div>
-        <div class="field"><label for="authPass">Password</label><input id="authPass" type="password" autocomplete="current-password" minlength="6" required></div>
+        <div class="field"><label for="authEmail">Email</label><input id="authEmail" type="email" autocomplete="email" autocapitalize="none" autocorrect="off" spellcheck="false" required></div>
+        <div class="field"><label for="authPass">Password</label><input id="authPass" type="password" autocomplete="current-password" autocapitalize="none" autocorrect="off" spellcheck="false" minlength="6" required><label style="display:flex;gap:6px;align-items:center;text-transform:none;letter-spacing:0;font-size:13px;font-weight:500;margin-top:4px"><input type="checkbox" id="showPass" style="width:auto"> Show password</label></div>
         <div class="row2"><button class="btn" type="submit" id="signInBtn">Sign in</button><button class="btn ghost" type="button" id="signUpBtn">Create account</button></div>
         <p class="msg" id="authMsg" role="status"></p>
       </form>
@@ -556,11 +556,11 @@ function startSupabase(){
   const msg = (t, err) => { $('authMsg').textContent = t; $('authMsg').classList.toggle('err', !!err); };
   $('authForm').addEventListener('submit', async e => {
     e.preventDefault(); msg('Signing in…');
-    const {error} = await sb.auth.signInWithPassword({email:$('authEmail').value.trim(), password:$('authPass').value});
-    if (error) msg(error.message === 'Invalid login credentials' ? 'Wrong email or password. New here? Press Create account.' : error.message, true); else msg('');
+    const {error} = await sb.auth.signInWithPassword({email:$('authEmail').value.trim().toLowerCase(), password:$('authPass').value});
+    if (error) msg(error.message === 'Invalid login credentials' ? 'Wrong email or password. Tick Show password to check what you typed (phones often add a capital letter).' : /confirm/i.test(error.message) ? 'This account isn’t confirmed yet. Tap the link in your email, or confirm the user in Supabase.' : error.message, true); else msg('');
   });
   $('signUpBtn').addEventListener('click', async () => {
-    const email = $('authEmail').value.trim(), password = $('authPass').value;
+    const email = $('authEmail').value.trim().toLowerCase(), password = $('authPass').value;
     if (!email || password.length < 6){ msg('Enter your email and a password of at least 6 characters.', true); return; }
     msg('Creating your account…');
     const {data, error} = await sb.auth.signUp({email, password, options:{emailRedirectTo: location.origin + location.pathname}});
@@ -569,6 +569,7 @@ function startSupabase(){
     else msg('');
   });
   $('signOut').addEventListener('click', () => sb.auth.signOut());
+  $('showPass').addEventListener('change', () => { $('authPass').type = $('showPass').checked ? 'text' : 'password'; });
   $('importNo').addEventListener('click', () => { $('importBar').hidden = true; });
   $('importYes').addEventListener('click', async () => {
     const rows = localRows(); if (!rows.length || !sbStore) return;
