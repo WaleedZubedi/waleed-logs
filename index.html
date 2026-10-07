@@ -168,6 +168,19 @@ select{font:inherit;color:inherit;width:100%;background:var(--surface);border:1p
 @media (max-width:860px){.mgrid{grid-template-columns:minmax(0,1fr)}}
 @media (max-width:620px){.hb .stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
 
+
+/* sign-in */
+.locked .tabs,.locked .tab{display:none!important}
+.auth{max-width:420px;width:100%;margin:24px auto 0}
+.auth form{display:grid;gap:12px}
+.auth .field input{font-size:16px}
+.auth .row2{display:flex;gap:8px;flex-wrap:wrap}
+.auth .row2 .btn{flex:1 1 140px}
+.auth .msg{font-size:13px;color:var(--muted);min-height:1.2em;margin:0}
+.auth .msg.err{color:var(--bad)}
+.banner{display:flex;flex-wrap:wrap;gap:10px;align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px}
+.banner p{margin:0;flex:1 1 240px;font-size:14px}
+.linkbtn{border:0;background:none;padding:0;color:var(--ink);text-decoration:underline;font-size:12px}
 @media (max-width:860px){.grid{grid-template-columns:minmax(0,1fr)}}
 @media (max-width:620px){
   .wrap{padding:20px 16px 56px}
@@ -185,13 +198,27 @@ select{font:inherit;color:inherit;width:100%;background:var(--surface);border:1p
   <header class="top">
     <div class="brand">
       <h1><span class="plates" aria-hidden="true"><i style="height:30px;background:var(--plate-red)"></i><i style="height:26px;background:var(--plate-blue)"></i><i style="height:22px;background:var(--plate-yellow)"></i><i style="height:18px;background:var(--plate-green)"></i></span>Waleed Logs</h1>
-      <p>Training, habits and food in one place. <span class="status" id="status">Connecting…</span></p>
+      <p>Training, habits and food in one place. <span class="status" id="status">Connecting…</span> <button class="linkbtn" id="signOut" type="button" hidden>Sign out</button></p>
     </div>
     <div class="controls">
       <div class="ctl" id="unitCtl"><span>Units</span><div class="seg" id="unitSeg"><button data-v="kg">kg</button><button data-v="lbs">lbs</button></div></div>
       <div class="ctl"><span>Chart range</span><div class="seg" id="rangeSeg"><button data-v="30">1M</button><button data-v="90">3M</button><button data-v="365">1Y</button><button data-v="all">All</button></div></div>
     </div>
   </header>
+
+  <section class="card auth" id="authCard" hidden>
+    <div class="card-head"><div class="swatch" style="background:var(--ink)"></div><h2>Sign in</h2></div>
+    <div class="card-body">
+      <p class="status" style="margin:0">Sign in with the same email on your phone and computer and your logs stay in sync.</p>
+      <form id="authForm" autocomplete="on">
+        <div class="field"><label for="authEmail">Email</label><input id="authEmail" type="email" autocomplete="email" required></div>
+        <div class="field"><label for="authPass">Password</label><input id="authPass" type="password" autocomplete="current-password" minlength="6" required></div>
+        <div class="row2"><button class="btn" type="submit" id="signInBtn">Sign in</button><button class="btn ghost" type="button" id="signUpBtn">Create account</button></div>
+        <p class="msg" id="authMsg" role="status"></p>
+      </form>
+    </div>
+  </section>
+  <div class="banner" id="importBar" hidden><p id="importText"></p><button class="btn" id="importYes" type="button">Import</button><button class="btn ghost" id="importNo" type="button">Not now</button></div>
 
   <nav class="tabs" role="tablist">
     <button role="tab" data-tab="training" id="t-training">Training</button>
@@ -293,6 +320,7 @@ select{font:inherit;color:inherit;width:100%;background:var(--surface);border:1p
 </div>
 <div class="toast" id="toast" hidden></div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 (() => {
 const LB = 0.45359237;
@@ -378,6 +406,7 @@ async function boot(){
   render();
   let d = null;
   try { d = window.claude && window.claude.use ? await window.claude.use('db') : null; } catch(e){ d = null; }
+  if (!d && window.supabase && !window.claude){ startSupabase(); return; }
   if (!d){
     local.load();
     if (!S.exercises.length && !Object.keys(S.weights).length)
@@ -392,6 +421,9 @@ async function boot(){
     const user = await window.claude.use('user');
     if (user && user.can){ const c = await user.can('data.write'); if (c === false){ readOnly = true; readOnlyChecked = true; $('status').textContent = 'View only.'; } }
   } catch(e){}
+  subscribeAll();
+}
+function subscribeAll(){
   const onErr = () => { $('status').textContent = 'Lost connection. Reload the page to keep saving.'; };
   db.collection('weights').onSnapshot(s => { const w={}; s.docs.forEach(x=>{ const v=x.data(); if (v && typeof v.kg==='number') w[x.id]=v.kg; }); S.weights=w; render(); }, onErr);
   db.collection('exercises').onSnapshot(s => { S.exercises = s.docs.map(x=>({id:x.id, ...x.data()})); render(); }, onErr);
@@ -401,6 +433,153 @@ async function boot(){
   db.collection('habitLogs').onSnapshot(s => { const h={}; s.docs.forEach(x=>{ h[x.id]=x.data(); }); S.hlogs=h; render(); }, onErr);
   db.collection('meals').onSnapshot(s => { S.meals = s.docs.map(x=>({id:x.id, ...x.data()})); render(); }, onErr);
   db.doc('settings/macros').onSnapshot(s => { if (s.exists) S.targets = Object.assign({kcal:0,p:0,c:0,f:0}, s.data()); render(); }, onErr);
+}
+
+
+/* ---------- Supabase sync (used outside Claude, e.g. on Vercel) ---------- */
+const SB_URL = 'https://pmqzdcimclendtuxiamx.supabase.co';
+const SB_KEY = 'sb_publishable_GKANEcc7_lrRqTz1U8C24w_iL2uwopZ';
+let sb = null, sbStore = null, sbChannel = null;
+
+function makeSbStore(uid){
+  const cache = new Map(), colL = new Map(), docL = new Map();
+  const col = c => { if (!cache.has(c)) cache.set(c, new Map()); return cache.get(c); };
+  const snapCol = c => { const docs = [...col(c)].map(([id, d]) => ({id, exists:true, data: () => d})); return {docs, size:docs.length, empty:!docs.length}; };
+  const notify = c => {
+    (colL.get(c) || new Set()).forEach(f => f(snapCol(c)));
+    for (const [path, set] of docL){ const [pc, pid] = path.split('/'); if (pc === c){ const d = col(c).get(pid); set.forEach(f => f({id:pid, exists:!!d, data: () => d})); } }
+  };
+  async function loadAll(){
+    const fresh = new Map();
+    for (let from = 0; ; from += 1000){
+      const {data, error} = await sb.from('entries').select('collection,id,data').eq('user_id', uid).range(from, from + 999);
+      if (error) throw error;
+      data.forEach(r => { if (!fresh.has(r.collection)) fresh.set(r.collection, new Map()); fresh.get(r.collection).set(r.id, r.data); });
+      if (data.length < 1000) break;
+    }
+    const all = new Set([...cache.keys(), ...fresh.keys()]);
+    cache.clear(); fresh.forEach((m, c) => cache.set(c, m));
+    all.forEach(notify);
+  }
+  function applyChange(p){
+    if (p.eventType === 'DELETE'){ const o = p.old || {}; if (!o.collection || (o.user_id && o.user_id !== uid)) return; col(o.collection).delete(o.id); notify(o.collection); }
+    else { const r = p.new || {}; if (!r.collection || r.user_id !== uid) return; col(r.collection).set(r.id, r.data); notify(r.collection); }
+  }
+  function doc(path){
+    const [c, id] = path.split('/');
+    const set = async d => {
+      const {error} = await sb.from('entries').upsert({user_id:uid, collection:c, id, data:d, updated_at:new Date().toISOString()}, {onConflict:'user_id,collection,id'});
+      if (error) throw error; col(c).set(id, d); notify(c);
+    };
+    return {
+      set,
+      update: d => set({...(col(c).get(id) || {}), ...d}),
+      async delete(){ const {error} = await sb.from('entries').delete().match({user_id:uid, collection:c, id}); if (error) throw error; col(c).delete(id); notify(c); },
+      onSnapshot(cb){ if (!docL.has(path)) docL.set(path, new Set()); docL.get(path).add(cb); const d = col(c).get(id); cb({id, exists:!!d, data: () => d}); return () => docL.get(path).delete(cb); }
+    };
+  }
+  function collection(c){
+    return { onSnapshot(cb){ if (!colL.has(c)) colL.set(c, new Set()); colL.get(c).add(cb); cb(snapCol(c)); return () => colL.get(c).delete(cb); } };
+  }
+  async function bulk(rows){
+    for (let i = 0; i < rows.length; i += 500){
+      const chunk = rows.slice(i, i + 500).map(r => ({...r, user_id:uid, updated_at:new Date().toISOString()}));
+      const {error} = await sb.from('entries').upsert(chunk, {onConflict:'user_id,collection,id'});
+      if (error) throw error;
+    }
+  }
+  return {doc, collection, loadAll, applyChange, bulk, count: () => [...cache.values()].reduce((a, m) => a + m.size, 0)};
+}
+
+function resetState(){
+  S.weights = {}; S.exercises = []; S.sets = []; S.habits = []; S.hlogs = {}; S.meals = [];
+  S.settings = {unit:'kg', goal:'lose'}; S.targets = {kcal:0,p:0,c:0,f:0};
+}
+
+async function enterApp(session){
+  const uid = session.user.id;
+  document.body.classList.remove('locked'); $('authCard').hidden = true;
+  $('status').textContent = 'Syncing…'; $('signOut').hidden = false;
+  resetState();
+  sbStore = makeSbStore(uid); db = sbStore;
+  subscribeAll();
+  try { await sbStore.loadAll(); $('status').textContent = 'Synced to your account (' + session.user.email + ').'; }
+  catch(e){ $('status').textContent = 'Couldn’t load your logs. Check your connection and reload.'; return; }
+  if (sbChannel) sb.removeChannel(sbChannel);
+  sbChannel = sb.channel('entries-' + uid)
+    .on('postgres_changes', {event:'*', schema:'public', table:'entries'}, p => sbStore.applyChange(p))
+    .subscribe();
+  offerImport();
+}
+
+function localRows(){
+  let j = null; try { j = JSON.parse(localStorage.getItem('pl-data') || 'null'); } catch(e){}
+  if (!j) return [];
+  const rows = [];
+  Object.entries(j.weights || {}).forEach(([date, kg]) => rows.push({collection:'weights', id:date, data:{date, kg}}));
+  (j.exercises || []).forEach(({id, ...d}) => rows.push({collection:'exercises', id, data:d}));
+  (j.sets || []).forEach(({id, ...d}) => rows.push({collection:'sets', id, data:d}));
+  (j.habits || []).forEach(({id, ...d}) => rows.push({collection:'habits', id, data:d}));
+  Object.entries(j.hlogs || {}).forEach(([id, d]) => rows.push({collection:'habitLogs', id, data:d}));
+  (j.meals || []).forEach(({id, ...d}) => rows.push({collection:'meals', id, data:d}));
+  const t = j.targets || {}; if (t.kcal || t.p || t.c || t.f) rows.push({collection:'settings', id:'macros', data:t});
+  if (rows.length && j.settings) rows.push({collection:'settings', id:'main', data:j.settings});
+  return rows.filter(r => r.id && /^[A-Za-z0-9_\-.~:@+]+$/.test(r.id));
+}
+function offerImport(){
+  let done = false; try { done = localStorage.getItem('pl-imported') === '1'; } catch(e){}
+  const rows = done ? [] : localRows();
+  const n = rows.filter(r => r.collection !== 'settings').length;
+  if (!n){ $('importBar').hidden = true; return; }
+  $('importText').textContent = `This device has ${n} older ${n === 1 ? 'entry' : 'entries'} that aren't in your account yet. Import them so they sync everywhere?`;
+  $('importBar').hidden = false;
+}
+
+function startSupabase(){
+  sb = window.supabase.createClient(SB_URL, SB_KEY, {auth:{persistSession:true, autoRefreshToken:true}});
+  document.body.classList.add('locked');
+  const showAuth = () => {
+    document.body.classList.add('locked'); $('authCard').hidden = false; $('signOut').hidden = true; $('importBar').hidden = true;
+    $('status').textContent = 'Sign in to sync your logs.';
+    if (sbChannel){ sb.removeChannel(sbChannel); sbChannel = null; }
+    db = null; sbStore = null; resetState(); render();
+  };
+  let current = null;
+  sb.auth.onAuthStateChange((event, session) => {
+    const id = session ? session.user.id : null;
+    if (id === current) return;
+    current = id;
+    if (session) enterApp(session); else showAuth();
+  });
+  sb.auth.getSession().then(({data}) => { if (!data.session && current === null) showAuth(); });
+
+  const msg = (t, err) => { $('authMsg').textContent = t; $('authMsg').classList.toggle('err', !!err); };
+  $('authForm').addEventListener('submit', async e => {
+    e.preventDefault(); msg('Signing in…');
+    const {error} = await sb.auth.signInWithPassword({email:$('authEmail').value.trim(), password:$('authPass').value});
+    if (error) msg(error.message === 'Invalid login credentials' ? 'Wrong email or password. New here? Press Create account.' : error.message, true); else msg('');
+  });
+  $('signUpBtn').addEventListener('click', async () => {
+    const email = $('authEmail').value.trim(), password = $('authPass').value;
+    if (!email || password.length < 6){ msg('Enter your email and a password of at least 6 characters.', true); return; }
+    msg('Creating your account…');
+    const {data, error} = await sb.auth.signUp({email, password, options:{emailRedirectTo: location.origin + location.pathname}});
+    if (error) msg(error.message, true);
+    else if (!data.session) msg('Check your email and tap the confirmation link, then sign in here.');
+    else msg('');
+  });
+  $('signOut').addEventListener('click', () => sb.auth.signOut());
+  $('importNo').addEventListener('click', () => { $('importBar').hidden = true; });
+  $('importYes').addEventListener('click', async () => {
+    const rows = localRows(); if (!rows.length || !sbStore) return;
+    $('importYes').disabled = true; $('importText').textContent = 'Importing…';
+    try { await sbStore.bulk(rows); await sbStore.loadAll(); try { localStorage.setItem('pl-imported', '1'); } catch(e){}
+      $('importBar').hidden = true; toast('Imported ' + rows.length + ' entries'); }
+    catch(e){ $('importText').textContent = 'Import failed. Check your connection and try again.'; }
+    $('importYes').disabled = false;
+  });
+  // catch anything realtime missed when coming back to the tab
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && sbStore) sbStore.loadAll().catch(() => {}); });
 }
 
 /* ---------- chart ---------- */

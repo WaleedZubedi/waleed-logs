@@ -8,6 +8,8 @@ A personal tracker for training, habits and food, in a single page (`index.html`
 
 ## Running it
 
-Open `index.html` in a browser, or turn on GitHub Pages for this repo.
+Open `index.html` in a browser or deploy the repo as a static site (Vercel, GitHub Pages).
 
-Outside Claude, data is saved in the browser's local storage, so it stays on that device and browser only. Inside the Claude artifact, data is saved to your Claude account.
+Logs sync across devices through Supabase. Sign in with the same email on every device.
+The database setup is in `supabase/schema.sql` (run it once in the Supabase SQL Editor).
+Inside the Claude artifact, data is saved to your Claude account instead.
