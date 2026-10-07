@@ -10,6 +10,6 @@ A personal tracker for training, habits and food, in a single page (`index.html`
 
 Open `index.html` in a browser or deploy the repo as a static site (Vercel, GitHub Pages).
 
-Logs sync across devices through Supabase. Sign in with the same email on every device.
+Logs sync across devices through Supabase, with no sign-in.
 The database setup is in `supabase/schema.sql` (run it once in the Supabase SQL Editor).
 Inside the Claude artifact, data is saved to your Claude account instead.

@@ -170,7 +170,6 @@ select{font:inherit;color:inherit;width:100%;background:var(--surface);border:1p
 
 
 /* sign-in */
-.locked .tabs,.locked .tab{display:none!important}
 .auth{max-width:420px;width:100%;margin:24px auto 0}
 .auth form{display:grid;gap:12px}
 .auth .field input{font-size:16px}
@@ -198,7 +197,7 @@ select{font:inherit;color:inherit;width:100%;background:var(--surface);border:1p
   <header class="top">
     <div class="brand">
       <h1><span class="plates" aria-hidden="true"><i style="height:30px;background:var(--plate-red)"></i><i style="height:26px;background:var(--plate-blue)"></i><i style="height:22px;background:var(--plate-yellow)"></i><i style="height:18px;background:var(--plate-green)"></i></span>Waleed Logs</h1>
-      <p>Training, habits and food in one place. <span class="status" id="status">Connecting…</span> <button class="linkbtn" id="signOut" type="button" hidden>Sign out</button></p>
+      <p>Training, habits and food in one place. <span class="status" id="status">Connecting…</span></p>
     </div>
     <div class="controls">
       <div class="ctl" id="unitCtl"><span>Units</span><div class="seg" id="unitSeg"><button data-v="kg">kg</button><button data-v="lbs">lbs</button></div></div>
@@ -206,18 +205,6 @@ select{font:inherit;color:inherit;width:100%;background:var(--surface);border:1p
     </div>
   </header>
 
-  <section class="card auth" id="authCard" hidden>
-    <div class="card-head"><div class="swatch" style="background:var(--ink)"></div><h2>Sign in</h2></div>
-    <div class="card-body">
-      <p class="status" style="margin:0">Sign in with the same email on your phone and computer and your logs stay in sync.</p>
-      <form id="authForm" autocomplete="on">
-        <div class="field"><label for="authEmail">Email</label><input id="authEmail" type="email" autocomplete="email" autocapitalize="none" autocorrect="off" spellcheck="false" required></div>
-        <div class="field"><label for="authPass">Password</label><input id="authPass" type="password" autocomplete="current-password" autocapitalize="none" autocorrect="off" spellcheck="false" minlength="6" required><label style="display:flex;gap:6px;align-items:center;text-transform:none;letter-spacing:0;font-size:13px;font-weight:500;margin-top:4px"><input type="checkbox" id="showPass" style="width:auto"> Show password</label></div>
-        <div class="row2"><button class="btn" type="submit" id="signInBtn">Sign in</button><button class="btn ghost" type="button" id="signUpBtn">Create account</button></div>
-        <p class="msg" id="authMsg" role="status"></p>
-      </form>
-    </div>
-  </section>
   <div class="banner" id="importBar" hidden><p id="importText"></p><button class="btn" id="importYes" type="button">Import</button><button class="btn ghost" id="importNo" type="button">Not now</button></div>
 
   <nav class="tabs" role="tablist">
@@ -441,7 +428,7 @@ const SB_URL = 'https://pmqzdcimclendtuxiamx.supabase.co';
 const SB_KEY = 'sb_publishable_GKANEcc7_lrRqTz1U8C24w_iL2uwopZ';
 let sb = null, sbStore = null, sbChannel = null;
 
-function makeSbStore(uid){
+function makeSbStore(){
   const cache = new Map(), colL = new Map(), docL = new Map();
   const col = c => { if (!cache.has(c)) cache.set(c, new Map()); return cache.get(c); };
   const snapCol = c => { const docs = [...col(c)].map(([id, d]) => ({id, exists:true, data: () => d})); return {docs, size:docs.length, empty:!docs.length}; };
@@ -452,7 +439,7 @@ function makeSbStore(uid){
   async function loadAll(){
     const fresh = new Map();
     for (let from = 0; ; from += 1000){
-      const {data, error} = await sb.from('entries').select('collection,id,data').eq('user_id', uid).range(from, from + 999);
+      const {data, error} = await sb.from('logs').select('collection,id,data').range(from, from + 999);
       if (error) throw error;
       data.forEach(r => { if (!fresh.has(r.collection)) fresh.set(r.collection, new Map()); fresh.get(r.collection).set(r.id, r.data); });
       if (data.length < 1000) break;
@@ -462,19 +449,19 @@ function makeSbStore(uid){
     all.forEach(notify);
   }
   function applyChange(p){
-    if (p.eventType === 'DELETE'){ const o = p.old || {}; if (!o.collection || (o.user_id && o.user_id !== uid)) return; col(o.collection).delete(o.id); notify(o.collection); }
-    else { const r = p.new || {}; if (!r.collection || r.user_id !== uid) return; col(r.collection).set(r.id, r.data); notify(r.collection); }
+    if (p.eventType === 'DELETE'){ const o = p.old || {}; if (!o.collection) return; col(o.collection).delete(o.id); notify(o.collection); }
+    else { const r = p.new || {}; if (!r.collection) return; col(r.collection).set(r.id, r.data); notify(r.collection); }
   }
   function doc(path){
     const [c, id] = path.split('/');
     const set = async d => {
-      const {error} = await sb.from('entries').upsert({user_id:uid, collection:c, id, data:d, updated_at:new Date().toISOString()}, {onConflict:'user_id,collection,id'});
+      const {error} = await sb.from('logs').upsert({collection:c, id, data:d, updated_at:new Date().toISOString()}, {onConflict:'collection,id'});
       if (error) throw error; col(c).set(id, d); notify(c);
     };
     return {
       set,
       update: d => set({...(col(c).get(id) || {}), ...d}),
-      async delete(){ const {error} = await sb.from('entries').delete().match({user_id:uid, collection:c, id}); if (error) throw error; col(c).delete(id); notify(c); },
+      async delete(){ const {error} = await sb.from('logs').delete().match({collection:c, id}); if (error) throw error; col(c).delete(id); notify(c); },
       onSnapshot(cb){ if (!docL.has(path)) docL.set(path, new Set()); docL.get(path).add(cb); const d = col(c).get(id); cb({id, exists:!!d, data: () => d}); return () => docL.get(path).delete(cb); }
     };
   }
@@ -483,8 +470,8 @@ function makeSbStore(uid){
   }
   async function bulk(rows){
     for (let i = 0; i < rows.length; i += 500){
-      const chunk = rows.slice(i, i + 500).map(r => ({...r, user_id:uid, updated_at:new Date().toISOString()}));
-      const {error} = await sb.from('entries').upsert(chunk, {onConflict:'user_id,collection,id'});
+      const chunk = rows.slice(i, i + 500).map(r => ({...r, updated_at:new Date().toISOString()}));
+      const {error} = await sb.from('logs').upsert(chunk, {onConflict:'collection,id'});
       if (error) throw error;
     }
   }
@@ -496,18 +483,15 @@ function resetState(){
   S.settings = {unit:'kg', goal:'lose'}; S.targets = {kcal:0,p:0,c:0,f:0};
 }
 
-async function enterApp(session){
-  const uid = session.user.id;
-  document.body.classList.remove('locked'); $('authCard').hidden = true;
-  $('status').textContent = 'Syncing…'; $('signOut').hidden = false;
+async function enterApp(){
+  $('status').textContent = 'Syncing…';
   resetState();
-  sbStore = makeSbStore(uid); db = sbStore;
+  sbStore = makeSbStore(); db = sbStore;
   subscribeAll();
-  try { await sbStore.loadAll(); $('status').textContent = 'Synced to your account (' + session.user.email + ').'; }
+  try { await sbStore.loadAll(); $('status').textContent = 'Synced across your devices.'; }
   catch(e){ $('status').textContent = 'Couldn’t load your logs. Check your connection and reload.'; return; }
-  if (sbChannel) sb.removeChannel(sbChannel);
-  sbChannel = sb.channel('entries-' + uid)
-    .on('postgres_changes', {event:'*', schema:'public', table:'entries'}, p => sbStore.applyChange(p))
+  sbChannel = sb.channel('logs-live')
+    .on('postgres_changes', {event:'*', schema:'public', table:'logs'}, p => sbStore.applyChange(p))
     .subscribe();
   offerImport();
 }
@@ -536,40 +520,8 @@ function offerImport(){
 }
 
 function startSupabase(){
-  sb = window.supabase.createClient(SB_URL, SB_KEY, {auth:{persistSession:true, autoRefreshToken:true}});
-  document.body.classList.add('locked');
-  const showAuth = () => {
-    document.body.classList.add('locked'); $('authCard').hidden = false; $('signOut').hidden = true; $('importBar').hidden = true;
-    $('status').textContent = 'Sign in to sync your logs.';
-    if (sbChannel){ sb.removeChannel(sbChannel); sbChannel = null; }
-    db = null; sbStore = null; resetState(); render();
-  };
-  let current = null;
-  sb.auth.onAuthStateChange((event, session) => {
-    const id = session ? session.user.id : null;
-    if (id === current) return;
-    current = id;
-    if (session) enterApp(session); else showAuth();
-  });
-  sb.auth.getSession().then(({data}) => { if (!data.session && current === null) showAuth(); });
-
-  const msg = (t, err) => { $('authMsg').textContent = t; $('authMsg').classList.toggle('err', !!err); };
-  $('authForm').addEventListener('submit', async e => {
-    e.preventDefault(); msg('Signing in…');
-    const {error} = await sb.auth.signInWithPassword({email:$('authEmail').value.trim().toLowerCase(), password:$('authPass').value});
-    if (error) msg(error.message === 'Invalid login credentials' ? 'Wrong email or password. Tick Show password to check what you typed (phones often add a capital letter).' : /confirm/i.test(error.message) ? 'This account isn’t confirmed yet. Tap the link in your email, or confirm the user in Supabase.' : error.message, true); else msg('');
-  });
-  $('signUpBtn').addEventListener('click', async () => {
-    const email = $('authEmail').value.trim().toLowerCase(), password = $('authPass').value;
-    if (!email || password.length < 6){ msg('Enter your email and a password of at least 6 characters.', true); return; }
-    msg('Creating your account…');
-    const {data, error} = await sb.auth.signUp({email, password, options:{emailRedirectTo: location.origin + location.pathname}});
-    if (error) msg(error.message, true);
-    else if (!data.session) msg('Check your email and tap the confirmation link, then sign in here.');
-    else msg('');
-  });
-  $('signOut').addEventListener('click', () => sb.auth.signOut());
-  $('showPass').addEventListener('change', () => { $('authPass').type = $('showPass').checked ? 'text' : 'password'; });
+  sb = window.supabase.createClient(SB_URL, SB_KEY, {auth:{persistSession:false, autoRefreshToken:false}});
+  enterApp();
   $('importNo').addEventListener('click', () => { $('importBar').hidden = true; });
   $('importYes').addEventListener('click', async () => {
     const rows = localRows(); if (!rows.length || !sbStore) return;
